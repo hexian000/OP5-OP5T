@@ -46,7 +46,6 @@
 #include <linux/timer.h>
 #include <linux/time.h>
 #include <linux/fs.h>
-#include <linux/pm_wakeup.h>
 
 #ifdef CONFIG_FB
 #include <linux/fb.h>
@@ -55,10 +54,9 @@
 
 #include <linux/input/mt.h>
 
+#include "synaptics_redremote.h"
 #include <linux/project_info.h>
 #include "synaptics_baseline.h"
-
-#include <linux/moduleparam.h>
 
 /*----------------------Global Define--------------------------------*/
 
@@ -103,6 +101,9 @@ struct test_header {
 	unsigned int array_limitcbc_offset;
 	unsigned int array_limitcbc_size;
 };
+
+/******************for Red function*****************/
+#define CONFIG_SYNAPTIC_RED
 
 /*********************for gesture*******************/
 #ifdef SUPPORT_GESTURE
@@ -177,11 +178,6 @@ struct test_header {
 // Button key codes
 #define KEY_BUTTON_LEFT     KEY_BACK
 #define KEY_BUTTON_RIGHT    KEY_APPSELECT
-
-// module parameter
-bool s3320_stop_buttons;
-bool no_buttons_during_touch = false;
-module_param(no_buttons_during_touch, bool, 0644);
 
 /*********************for Debug LOG switch*******************/
 #define TPD_ERR(a, arg...)  pr_err(TPD_DEVICE ": " a, ##arg)
@@ -473,7 +469,6 @@ struct synaptics_ts_data {
 	int regulator_avdd_vmin;
 	int regulator_avdd_vmax;
 	int regulator_avdd_current;
-	struct wakeup_source	source;
 
 	uint32_t irq_flags;
 	uint32_t max_x;
@@ -1349,6 +1344,7 @@ static void gesture_judge(struct synaptics_ts_data *ts)
 }
 #endif
 /***************end****************/
+static char prlog_count;
 #ifdef REPORT_2D_PRESSURE
 static unsigned char pres_value;
 #endif
@@ -1502,7 +1498,6 @@ void int_touch(void)
 			MT_TOOL_FINGER, finger_status);
 			input_report_key(ts->input_dev,
 			BTN_TOOL_FINGER, 1);
-			s3320_stop_buttons = no_buttons_during_touch;
 			input_report_abs(ts->input_dev,
 			ABS_MT_POSITION_X, points.x);
 			input_report_abs(ts->input_dev,
@@ -1545,9 +1540,9 @@ void int_touch(void)
 	last_status = current_status & 0x02;
 
 	if (finger_num == 0/* && last_status && (check_key <= 1)*/) {
+		if (3 == (++prlog_count % 6))
+			TPD_ERR("all finger up\n");
 		input_report_key(ts->input_dev, BTN_TOOL_FINGER, 0);
-		s3320_stop_buttons = false;
-
 #ifndef TYPE_B_PROTOCOL
 		input_mt_sync(ts->input_dev);
 #endif
@@ -1602,7 +1597,7 @@ static void int_key_report_s3508(struct synaptics_ts_data *ts)
 	}
 
 	if (!ts->key_disable) {
-		if ((button_key & BUTTON_LEFT) && !(ts->pre_btn_state & BUTTON_LEFT) && !s3320_stop_buttons) {
+		if ((button_key & BUTTON_LEFT) && !(ts->pre_btn_state & BUTTON_LEFT)) {
 			input_report_key(ts->input_dev, keycode_left, 1);
 			input_sync(ts->input_dev);
 		} else if (!(button_key & BUTTON_LEFT) && (ts->pre_btn_state & BUTTON_LEFT)) {
@@ -1610,7 +1605,7 @@ static void int_key_report_s3508(struct synaptics_ts_data *ts)
 			input_sync(ts->input_dev);
 		}
 
-		if ((button_key & BUTTON_RIGHT) && !(ts->pre_btn_state & BUTTON_RIGHT) && !s3320_stop_buttons) {
+		if ((button_key & BUTTON_RIGHT) && !(ts->pre_btn_state & BUTTON_RIGHT)) {
 			input_report_key(ts->input_dev, keycode_right, 1);
 			input_sync(ts->input_dev);
 		} else if (!(button_key & BUTTON_RIGHT) && (ts->pre_btn_state & BUTTON_RIGHT)) {
@@ -1730,9 +1725,8 @@ static irqreturn_t synaptics_irq_thread_fn(int irq, void *dev_id)
 	struct synaptics_ts_data *ts = (struct synaptics_ts_data *)dev_id;
 
 	touch_disable(ts);
-	__pm_stay_awake(&ts->source);
 	synaptics_ts_work_func(&ts->report_work);
-	__pm_relax(&ts->source);
+
 	return IRQ_HANDLED;
 }
 #endif
@@ -4648,6 +4642,9 @@ static int synaptics_ts_init_virtual_key(struct synaptics_ts_data *ts)
 static int synaptics_ts_probe(struct i2c_client *client,
 		const struct i2c_device_id *id)
 {
+#ifdef CONFIG_SYNAPTIC_RED
+	struct remotepanel_data *premote_data = NULL;
+#endif
 	struct synaptics_ts_data *ts = NULL;
 	int ret = -1;
 	uint8_t buf[4];
@@ -4768,7 +4765,6 @@ static int synaptics_ts_probe(struct i2c_client *client,
 		goto exit_createworkqueue_failed;
 	}
 	INIT_DELAYED_WORK(&ts->base_work, tp_baseline_get_work);
-	wakeup_source_init(&ts->source, "tp_syna");
 
 	ret = synaptics_init_panel(ts); /* will also switch back to page 0x04 */
 	if (ret < 0)
@@ -4867,6 +4863,19 @@ static int synaptics_ts_probe(struct i2c_client *client,
 #ifdef SUPPORT_VIRTUAL_KEY
 	synaptics_ts_init_virtual_key(ts);
 #endif
+#ifdef CONFIG_SYNAPTIC_RED
+	premote_data = remote_alloc_panel_data();
+	if (premote_data) {
+		premote_data->client        = client;
+		premote_data->input_dev		= ts->input_dev;
+		premote_data->pmutex		= &ts->mutex;
+		premote_data->irq_gpio      = ts->irq_gpio;
+		premote_data->irq			= client->irq;
+		premote_data->enable_remote = &(ts->enable_remote);
+		register_remote_device(premote_data);
+
+	}
+#endif
 	init_synaptics_proc(ts);
 	TPDTM_DMESG("synaptics_ts_probe 3203: normal end\n");
 	return 0;
@@ -4898,6 +4907,9 @@ static int synaptics_ts_remove(struct i2c_client *client)
 	struct synaptics_ts_data *ts = i2c_get_clientdata(client);
 
 	TPD_ERR("%s is called\n", __func__);
+#ifdef CONFIG_SYNAPTIC_RED
+	unregister_remote_device();
+#endif
 
 #if defined(CONFIG_FB)
 	if (fb_unregister_client(&ts->fb_notif))
@@ -5112,7 +5124,6 @@ static int fb_notifier_callback(struct notifier_block *self, unsigned long event
 		if ((*blank == FB_BLANK_UNBLANK/* || *blank == FB_BLANK_VSYNC_SUSPEND || *blank == FB_BLANK_NORMAL*/)\
 		        //&& (event == FB_EVENT_BLANK ))
 		        && (event == FB_EARLY_EVENT_BLANK)) {
-			s3320_stop_buttons = false;
 			if (ts->is_suspended == 1) {
 				TPD_DEBUG("%s going TP resume start\n", __func__);
 				ts->is_suspended = 0;

@@ -628,7 +628,6 @@ static void ufshcd_cmd_log_init(struct ufs_hba *hba)
 {
 }
 
-#ifdef CONFIG_TRACEPOINTS
 static void __ufshcd_cmd_log(struct ufs_hba *hba, char *str, char *cmd_type,
 			     unsigned int tag, u8 cmd_id, u8 idn, u8 lun,
 			     sector_t lba, int transfer_len, u8 opcode)
@@ -644,7 +643,6 @@ static void __ufshcd_cmd_log(struct ufs_hba *hba, char *str, char *cmd_type,
 
 	ufshcd_add_command_trace(hba, &entry, opcode);
 }
-#endif
 
 static void ufshcd_dme_cmd_log(struct ufs_hba *hba, char *str, u8 cmd_id)
 {
@@ -2419,9 +2417,6 @@ static inline void ufshcd_hba_capabilities(struct ufs_hba *hba)
 	hba->nutrs = (hba->capabilities & MASK_TRANSFER_REQUESTS_SLOTS) + 1;
 	hba->nutmrs =
 	((hba->capabilities & MASK_TASK_MANAGEMENT_REQUEST_SLOTS) >> 16) + 1;
-
-	/* disable auto hibern8 */
-	hba->capabilities &= ~MASK_AUTO_HIBERN8_SUPPORT;
 }
 
 /**
@@ -9070,6 +9065,7 @@ out:
 		hba->curr_dev_pwr_mode,
 		hba->uic_link_state);
 	return ret;
+
 }
 EXPORT_SYMBOL(ufshcd_runtime_suspend);
 

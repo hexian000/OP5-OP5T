@@ -919,10 +919,8 @@ static int synaptics_rmi4_f11_abs_report(struct synaptics_rmi4_data *rmi4_data,
 
 	input_event(rmi4_data->input_dev, EV_SYN, SYN_TIME_SEC,
 			ktime_to_timespec(rmi4_data->timestamp).tv_sec);
-
 	input_event(rmi4_data->input_dev, EV_SYN, SYN_TIME_NSEC,
 			ktime_to_timespec(rmi4_data->timestamp).tv_nsec);
-#ifdef
 
 	for (finger = 0; finger < fingers_supported; finger++) {
 		reg_index = finger / 4;
@@ -1115,10 +1113,8 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 
 	input_event(rmi4_data->input_dev, EV_SYN, SYN_TIME_SEC,
 			ktime_to_timespec(rmi4_data->timestamp).tv_sec);
-
 	input_event(rmi4_data->input_dev, EV_SYN, SYN_TIME_NSEC,
 			ktime_to_timespec(rmi4_data->timestamp).tv_nsec);
-#ifdef
 
 	for (finger = 0; finger < fingers_to_process; finger++) {
 		finger_data = data + finger;

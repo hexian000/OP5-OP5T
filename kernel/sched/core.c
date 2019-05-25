@@ -130,6 +130,38 @@ void su_exit(void)
 	atomic_dec(&__su_instances);
 }
 
+static atomic_t __su_instances;
+
+int su_instances(void)
+{
+	return atomic_read(&__su_instances);
+}
+
+bool su_running(void)
+{
+	return su_instances() > 0;
+}
+
+bool su_visible(void)
+{
+	kuid_t uid = current_uid();
+	if (su_running())
+		return true;
+	if (uid_eq(uid, GLOBAL_ROOT_UID) || uid_eq(uid, GLOBAL_SYSTEM_UID))
+		return true;
+	return false;
+}
+
+void su_exec(void)
+{
+	atomic_inc(&__su_instances);
+}
+
+void su_exit(void)
+{
+	atomic_dec(&__su_instances);
+}
+
 ATOMIC_NOTIFIER_HEAD(load_alert_notifier_head);
 
 DEFINE_MUTEX(sched_domains_mutex);
@@ -6527,6 +6559,10 @@ static void set_cpu_rq_start_time(void)
 	rq->age_stamp = sched_clock_cpu(cpu);
 }
 
+#ifdef CONFIG_SCHED_SMT
+atomic_t sched_smt_present = ATOMIC_INIT(0);
+#endif
+
 static int sched_cpu_active(struct notifier_block *nfb,
 				      unsigned long action, void *hcpu)
 {
@@ -6543,11 +6579,23 @@ static int sched_cpu_active(struct notifier_block *nfb,
 		 * set_cpu_online(). But it might not yet have marked itself
 		 * as active, which is essential from here on.
 		 */
+#ifdef CONFIG_SCHED_SMT
+		/*
+		 * When going up, increment the number of cores with SMT present.
+		 */
+		if (cpumask_weight(cpu_smt_mask(cpu)) == 2)
+			atomic_inc(&sched_smt_present);
+#endif
 		set_cpu_active(cpu, true);
 		stop_machine_unpark(cpu);
 		return NOTIFY_OK;
 
 	case CPU_DOWN_FAILED:
+#ifdef CONFIG_SCHED_SMT
+		/* Same as for CPU_ONLINE */
+		if (cpumask_weight(cpu_smt_mask(cpu)) == 2)
+			atomic_inc(&sched_smt_present);
+#endif
 		set_cpu_active(cpu, true);
 		return NOTIFY_OK;
 
@@ -6562,7 +6610,15 @@ static int sched_cpu_inactive(struct notifier_block *nfb,
 	switch (action & ~CPU_TASKS_FROZEN) {
 	case CPU_DOWN_PREPARE:
 		set_cpu_active((long)hcpu, false);
+#ifdef CONFIG_SCHED_SMT
+		/*
+		 * When going down, decrement the number of cores with SMT present.
+		 */
+		if (cpumask_weight(cpu_smt_mask((long)hcpu)) == 2)
+			atomic_dec(&sched_smt_present);
+#endif
 		return NOTIFY_OK;
+
 	default:
 		return NOTIFY_DONE;
 	}

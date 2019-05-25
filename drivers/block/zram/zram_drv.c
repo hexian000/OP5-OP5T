@@ -40,15 +40,10 @@ static DEFINE_IDR(zram_index_idr);
 static DEFINE_MUTEX(zram_index_mutex);
 
 static int zram_major;
-static const char *default_compressor = CONFIG_ZRAM_DEFAULT_COMP_ALGORITHM;
+static const char *default_compressor = "lzo";
 
 /* Module params (documentation at end) */
 static unsigned int num_devices = 1;
-/*
- * Pages that compress to sizes equals or greater than this are stored
- * uncompressed in memory.
- */
-static size_t huge_class_size;
 
 static void zram_free_page(struct zram *zram, size_t index);
 
@@ -936,8 +931,6 @@ static bool zram_meta_alloc(struct zram *zram, u64 disksize)
 		return false;
 	}
 
-	if (!huge_class_size)
-		huge_class_size = zs_huge_class_size(zram->mem_pool);
 	return true;
 }
 
@@ -1124,7 +1117,7 @@ compress_again:
 		return ret;
 	}
 
-	if (unlikely(comp_len >= huge_class_size)) {
+	if (unlikely(comp_len > max_zpage_size)) {
 		comp_len = PAGE_SIZE;
 		if (zram_wb_enabled(zram) && allow_wb) {
 			zcomp_stream_put(zram->comp);
@@ -1157,14 +1150,13 @@ compress_again:
 				__GFP_KSWAPD_RECLAIM |
 				__GFP_NOWARN |
 				__GFP_HIGHMEM |
-				__GFP_MOVABLE |
-				__GFP_CMA);
+				__GFP_MOVABLE);
 	if (!handle) {
 		zcomp_stream_put(zram->comp);
 		atomic64_inc(&zram->stats.writestall);
 		handle = zs_malloc(zram->mem_pool, comp_len,
 				GFP_NOIO | __GFP_HIGHMEM |
-				__GFP_MOVABLE | __GFP_CMA);
+				__GFP_MOVABLE);
 		if (handle)
 			goto compress_again;
 		return -ENOMEM;
@@ -1727,7 +1719,6 @@ static int zram_add(void)
 
 	zram->disk->queue->backing_dev_info->capabilities |=
 					BDI_CAP_STABLE_WRITES;
-
 	disk_to_dev(zram->disk)->groups = zram_disk_attr_groups;
 	add_disk(zram->disk);
 
@@ -1765,15 +1756,6 @@ static int zram_remove(struct zram *zram)
 	mutex_unlock(&bdev->bd_mutex);
 
 	zram_debugfs_unregister(zram);
-	/*
-	 * Remove sysfs first, so no one will perform a disksize
-	 * store while we destroy the devices. This also helps during
-	 * hot_remove -- zram_reset_device() is the last holder of
-	 * ->init_lock, no later/concurrent disksize_store() or any
-	 * other sysfs handlers are possible.
-	 */
-	sysfs_remove_group(&disk_to_dev(zram->disk)->kobj,
-			&zram_disk_attr_group);
 
 	/* Make sure all the pending I/O are finished */
 	fsync_bdev(bdev);

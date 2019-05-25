@@ -333,6 +333,24 @@ static void set_fpc_irq(struct fpc1020_data *fpc1020, bool enable)
 		disable_irq(gpio_to_irq(fpc1020->irq_gpio));
 }
 
+static void set_fpc_irq(struct fpc1020_data *fpc1020, bool enable)
+{
+	bool irq_enabled;
+
+	spin_lock(&fpc1020->irq_lock);
+	irq_enabled = fpc1020->irq_enabled;
+	fpc1020->irq_enabled = enable;
+	spin_unlock(&fpc1020->irq_lock);
+
+	if (enable == irq_enabled)
+		return;
+
+	if (enable)
+		enable_irq(gpio_to_irq(fpc1020->irq_gpio));
+	else
+		disable_irq(gpio_to_irq(fpc1020->irq_gpio));
+}
+
 static ssize_t report_home_set(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
