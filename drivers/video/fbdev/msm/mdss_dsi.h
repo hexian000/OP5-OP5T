@@ -587,9 +587,6 @@ struct mdss_dsi_ctrl_pdata {
 	int disp_vci_en_gpio;
 	int disp_poc_en_gpio;
 
-	struct dsi_panel_cmds hbm_on_cmds;
-	struct dsi_panel_cmds hbm_off_cmds;
-	int hbm_mode;
 
 	bool is_panel_on;
 	bool setting_mode_loaded;
@@ -643,13 +640,6 @@ struct mdss_dsi_ctrl_pdata {
 	bool update_phy_timing; /* flag to recalculate PHY timings */
 
 	bool phy_power_off;
-
-	struct notifier_block wake_notif;
-	struct task_struct *wake_thread;
-	struct completion wake_comp;
-	wait_queue_head_t wake_waitq;
-	atomic_t disp_is_on;
-	atomic_t needs_wake;
 };
 
 struct dsi_status_data {
@@ -661,8 +651,6 @@ struct dsi_status_data {
 int mdss_dsi_panel_set_srgb_mode(struct mdss_dsi_ctrl_pdata *ctrl, int level);
 int mdss_dsi_panel_get_srgb_mode(struct mdss_dsi_ctrl_pdata *ctrl);
 
-int mdss_dsi_panel_set_hbm_mode(struct mdss_dsi_ctrl_pdata *ctrl, int level);
-int mdss_dsi_panel_get_hbm_mode(struct mdss_dsi_ctrl_pdata *ctrl);
 
 int mdss_dsi_panel_set_adobe_rgb_mode
 	(struct mdss_dsi_ctrl_pdata *ctrl, int level);
